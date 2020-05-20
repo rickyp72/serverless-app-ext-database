@@ -1,0 +1,75 @@
+service: notes-app-ext-database
+
+custom:
+  # Our stage is based on what is passed in when running serverless
+  # commands. Or fallsback to what we have set in the provider section.
+  stage: ${opt:stage, self:provider.stage}
+  # Set the table name here so we can use it while testing locally
+  tableName: ${self:custom.stage}-ext-notes
+
+provider:
+  name: aws
+  stage: dev
+  region: eu-west-2
+
+resources:
+  Resources:
+    NotesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        # Generate a name based on the stage
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: noteId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: noteId
+            KeyType: RANGE
+        # Set the capacity to auto-scale
+        BillingMode: PAY_PER_REQUEST
+
+    NotesTableDBAlarm:
+      Type: 'AWS::CloudWatch::Alarm'
+      Properties:
+        ActionsEnabled: 'true'
+        AlarmActions:
+          - arn:aws:sns:eu-west-2:245879739180:serverless-slack-lambda-dev-alerts-alarm
+        AlarmDescription: !Join
+          - ' - '
+          - - ConsumedReadCapacityUnits
+            - !Sub 'NotesTable ReadCapacityUnits Alarm'
+        AlarmName: !Join
+          - '-'
+          - - !Sub 'NotesTable'
+            - ConsumedReadCapacityUnits-${self:custom.stage}
+        EvaluationPeriods: '1'
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: TableName
+            Value: !Sub 'NotesTable'
+        MetricName: ConsumedReadCapacityUnits
+        Namespace: AWS/DynamoDB
+        Period: '60'
+        Statistic: Sum
+        Threshold: '240'
+        TreatMissingData: ignore
+        Unit: Count
+
+
+  Outputs:
+    NotesTableArn:
+      Value:
+         Fn::GetAtt:
+          - NotesTable
+          - Arn
+      Export:
+        Name: ${self:custom.stage}-ExtNotesTableArn
+
+
+
+
+
